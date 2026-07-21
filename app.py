@@ -25,6 +25,24 @@ def classificar_descricao(texto_bruto):
             return categoria
     return 'Outros'
 
+# Listas de palavras-chave para identificação de colunas
+PALAVRAS_DATA = [
+    'data', 'datas', 'date', 'dates', 'dia', 'dias', 'dt', 'dt_transacao'
+]
+
+PALAVRAS_DESCRICAO = [
+    'descricao', 'descrição', 'descricoes', 'descrições', 
+    'historico', 'histórico', 'historicos', 'históricos', 
+    'lançamento', 'lancamento', 'lançamentos', 'lancamentos', 
+    'detalhes', 'extrato', 'transacao', 'transação', 'transacoes', 'transações', 'item'
+]
+
+PALAVRAS_VALOR = [
+    'valor', 'valores', 'valor (r$)', 'valor r$', 'quantia', 'monto', 'amount', 
+    'saida', 'saída', 'saidas', 'saídas', 'entrada', 'entradas', 
+    'debito', 'débito', 'debitos', 'débitos', 'credito', 'crédito', 'creditos', 'créditos'
+]
+
 # 2. BARRA LATERAL (Sidebar)
 st.sidebar.header("📁 Importar Dados")
 arquivo_carregado = st.sidebar.file_uploader(
@@ -40,36 +58,44 @@ if arquivo_carregado is not None:
         else:
             df = pd.read_excel(arquivo_carregado)
 
-        # Mapeamento automático de colunas flexível (aceita variações de nomes)
+        # Mapeamento automático inteligente
         colunas_originais = df.columns.tolist()
         mapa_colunas = {}
 
         for col in colunas_originais:
             col_limpa = str(col).strip().lower()
-            if col_limpa in ['descricao', 'descrição', 'historico', 'histórico', 'lançamento', 'lancamento', 'detalhes', 'extrato']:
-                mapa_colunas[col] = 'Descricao'
-                
-            elif col_limpa in ['valor', 'valor (r$)', 'quantia', 'monto', 'amount']:
-                mapa_colunas[col] = 'Valor'
-                
-            elif col_limpa in ['data', 'date', 'dia']:
-                mapa_colunas[col] = 'Data'
 
-        # Renomeia as colunas encontradas
+            # 1º Passo: Checagem por lista de palavras exatas
+            if col_limpa in PALAVRAS_DATA:
+                mapa_colunas[col] = 'Data'
+            elif col_limpa in PALAVRAS_DESCRICAO:
+                mapa_colunas[col] = 'Descricao'
+            elif col_limpa in PALAVRAS_VALOR:
+                mapa_colunas[col] = 'Valor'
+            else:
+                # 2º Passo: Checagem flexível por trechos de palavras
+                if any(p in col_limpa for p in ['valor', 'saida', 'saída', 'entrada', 'debito', 'débito', 'credito', 'crédito']):
+                    mapa_colunas[col] = 'Valor'
+                elif any(p in col_limpa for p in ['data', 'date', 'dia']):
+                    mapa_colunas[col] = 'Data'
+                elif any(p in col_limpa for p in ['desc', 'hist', 'lanç', 'lanc', 'detalhe', 'extrato']):
+                    mapa_colunas[col] = 'Descricao'
+
+        # Renomeia as colunas para o padrão do sistema
         df = df.rename(columns=mapa_colunas)
 
-        # Checa se conseguimos mapear as 3 colunas obrigatórias
+        # Verifica se as 3 colunas vitais foram encontradas
         colunas_faltantes = [c for c in ['Data', 'Descricao', 'Valor'] if c not in df.columns]
 
         if colunas_faltantes:
-            st.error(f"⚠️ Não conseguimos encontrar a(s) coluna(s): **{', '.join(colunas_faltantes)}** na sua planilha.")
-            st.info(f"📋 As colunas identificadas no seu arquivo foram: `{', '.join([str(c) for c in colunas_originais])}`.\n\n"
-                    "Para o sistema funcionar, altere o nome da coluna no Excel para **Descricao**, **Valor** ou **Data**.")
+            st.error(f"⚠️ Não conseguimos identificar a(s) coluna(s): **{', '.join(colunas_faltantes)}** no seu arquivo.")
+            st.info(f"📋 As colunas encontradas na sua planilha foram: `{', '.join([str(c) for c in colunas_originais])}`.\n\n"
+                    "Para corrigir, basta mudar o nome da coluna no Excel para **Data**, **Descrição/Histórico** ou **Valor/Entradas/Saídas**.")
         else:
             st.sidebar.success("Arquivo carregado com sucesso!")
             
-            # Garante que valores de gastos fiquem positivos para a soma
-            df['Valor'] = df['Valor'].abs()
+            # Garante conversão correta de números e valores positivos
+            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce').fillna(0).abs()
             
             # Processa as categorias
             df['Categoria'] = df['Descricao'].apply(classificar_descricao)
@@ -104,7 +130,7 @@ if arquivo_carregado is not None:
                 st.dataframe(df[['Data', 'Descricao', 'Categoria', 'Valor']], use_container_width=True)
 
     except Exception as e:
-        st.error(f"Ocorreu um erro ao ler o arquivo: {e}")
+        st.error(f"Ocorreu um erro ao processar a planilha: {e}")
 
 else:
-    st.info("👋 **Bem-vindo!** Para gerar o seu relatório, abra a barra lateral esquerda (clicando na setinha `>` no topo esquerdo) e faça o upload do seu arquivo de extrato em formato `.csv` ou `.xlsx`.")
+    st.info("👋 **Bem-vinda!** Para gerar o seu relatório, abra a barra lateral esquerda (clicando na setinha `>` no topo esquerdo) e faça o upload do seu arquivo em formato `.csv` ou `.xlsx`.")
