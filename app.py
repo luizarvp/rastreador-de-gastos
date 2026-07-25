@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import pdfplumber
 import io
 import tempfile
 import os
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except Exception:
+    pdfplumber = None
+    PDFPLUMBER_AVAILABLE = False
+
 try:
     from pdf2image import convert_from_bytes
     import pytesseract
@@ -211,28 +217,29 @@ def extrair_tabela_de_pdf(arquivo_pdf):
     except Exception:
         data = None
 
-    # 1) Tentar com pdfplumber (tabelas estruturadas e texto)
-    try:
-        pdf_stream = io.BytesIO(data) if data is not None else arquivo_pdf
-        with pdfplumber.open(pdf_stream) as pdf:
-            for pagina in pdf.pages:
-                tabelas = pagina.extract_tables()
-                if tabelas:
-                    for tabela in tabelas:
-                        for linha in tabela:
-                            linha_limpa = [celula if celula is not None else '' for celula in linha]
-                            if any(linha_limpa):
-                                linhas_tabela.append(linha_limpa)
-                else:
-                    # extrai texto por linha como fallback
-                    texto = pagina.extract_text()
-                    if texto:
-                        for linha in texto.split('\n'):
-                            if linha.strip():
-                                linhas_tabela.append([linha.strip()])
-    except Exception:
-        # pdfplumber pode falhar em PDFs escaneados; continuamos para tentar OCR
-        linhas_tabela = []
+    # 1) Tentar com pdfplumber (tabelas estruturadas e texto), se disponível
+    if PDFPLUMBER_AVAILABLE:
+        try:
+            pdf_stream = io.BytesIO(data) if data is not None else arquivo_pdf
+            with pdfplumber.open(pdf_stream) as pdf:
+                for pagina in pdf.pages:
+                    tabelas = pagina.extract_tables()
+                    if tabelas:
+                        for tabela in tabelas:
+                            for linha in tabela:
+                                linha_limpa = [celula if celula is not None else '' for celula in linha]
+                                if any(linha_limpa):
+                                    linhas_tabela.append(linha_limpa)
+                    else:
+                        # extrai texto por linha como fallback
+                        texto = pagina.extract_text()
+                        if texto:
+                            for linha in texto.split('\n'):
+                                if linha.strip():
+                                    linhas_tabela.append([linha.strip()])
+        except Exception:
+            # pdfplumber pode falhar em PDFs escaneados; continuamos para tentar OCR
+            linhas_tabela = []
 
     # Se extraímos algo confiável, retornamos
     if linhas_tabela:
@@ -244,13 +251,13 @@ def extrair_tabela_de_pdf(arquivo_pdf):
         return pd.DataFrame()
 
     try:
-            if 'POPPLER_PATH' in globals() and POPPLER_PATH:
-                imagens = convert_from_bytes(data, dpi=300, poppler_path=POPPLER_PATH)
-            else:
-                imagens = convert_from_bytes(data, dpi=300)
-        except Exception:
-            # conversão falhou (poppler ausente ou arquivo inválido)
-            return pd.DataFrame()
+        if 'POPPLER_PATH' in globals() and POPPLER_PATH:
+            imagens = convert_from_bytes(data, dpi=300, poppler_path=POPPLER_PATH)
+        else:
+            imagens = convert_from_bytes(data, dpi=300)
+    except Exception:
+        # conversão falhou (poppler ausente ou arquivo inválido)
+        return pd.DataFrame()
 
     ocr_lines = []
     for img in imagens:
