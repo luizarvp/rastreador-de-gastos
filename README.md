@@ -3,7 +3,7 @@
 Um aplicativo web interativo desenvolvido em Python com Streamlit para transformação e análise automática de extratos bancários brutos em relatórios visuais e gráficos.
 
 ## 🚀 Funcionalidades
-- 📁 Upload de extratos em formato `PDF`, `.csv`, `.xls` ,`.xlsx` e `.word` (Excel).
+- 📁 Upload de extratos em formato `PDF`, `.csv`, `.xls` ,`.xlsx` e `.word`.
 - 🧠 Mapeamento inteligente e flexível de colunas (identifica automaticamente *Data*, *Histórico/Descrição* e *Valores/Entradas/Saídas*).
 - 🏷️ Categorização automática de gastos (Transporte, Alimentação, Mercado, Assinaturas, etc.).
 - 📈 Gráficos visuais de consumo e métricas principais.
