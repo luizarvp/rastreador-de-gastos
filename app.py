@@ -284,17 +284,71 @@ def _extrair_data(texto):
     return match_data.group(0).replace('-', '/').replace('.', '/')
 
 
-def _extrair_valor_monetario(texto):
-    match_val = re.findall(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', str(texto))
-    if not match_val:
+def _converter_texto_para_valor(texto):
+    texto_limpo = _normalizar_texto(texto)
+    if not texto_limpo:
         return None
 
-    val_alvo = match_val[0] if len(match_val) == 1 else match_val[-2]
-    val_str = val_alvo.replace('.', '').replace(',', '.')
-    try:
-        return abs(float(val_str))
-    except Exception:
+    valor_str = re.sub(r'(?i)(?:R\$|RS|\$)', '', texto_limpo)
+    valor_str = re.sub(r'\s+', '', valor_str)
+    valor_str = re.sub(r'[^0-9,.\-+]', '', valor_str)
+    if not valor_str or not re.search(r'\d', valor_str):
         return None
+
+    decimal_sep = None
+    if ',' in valor_str and '.' in valor_str:
+        decimal_sep = ',' if valor_str.rfind(',') > valor_str.rfind('.') else '.'
+    elif ',' in valor_str:
+        casas = valor_str.rsplit(',', 1)[-1]
+        decimal_sep = ',' if 1 <= len(casas) <= 2 else None
+    elif '.' in valor_str:
+        casas = valor_str.rsplit('.', 1)[-1]
+        decimal_sep = '.' if 1 <= len(casas) <= 2 else None
+
+    if decimal_sep:
+        milhar_sep = '.' if decimal_sep == ',' else ','
+        valor_str = valor_str.replace(milhar_sep, '')
+        if decimal_sep != '.':
+            valor_str = valor_str.replace(decimal_sep, '.')
+    else:
+        valor_str = valor_str.replace('.', '').replace(',', '')
+
+    if valor_str in {'', '-', '+', '.', '-.', '+.'}:
+        return None
+
+    try:
+        return abs(float(valor_str))
+    except ValueError:
+        return None
+
+
+def _extrair_valor_monetario(texto):
+    candidatos = re.findall(r'(?i)(?:R\$|RS|\$)?\s*[+-]?\d[\d.,]*', str(texto))
+    valores_encontrados = []
+
+    for candidato in candidatos:
+        trecho = _normalizar_texto(candidato)
+        if not trecho:
+            continue
+        if not re.search(r'(?i)(?:R\$|RS|\$)|[.,]\d{1,2}\b', trecho):
+            continue
+        valor = _converter_texto_para_valor(trecho)
+        if valor is not None and valor > 0:
+            valores_encontrados.append(valor)
+
+    if not valores_encontrados:
+        return None
+
+    return valores_encontrados[0] if len(valores_encontrados) == 1 else valores_encontrados[-2]
+
+
+def _formatar_moeda_brl(valor):
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return "R$ 0,00"
+    formatado = f"{numero:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {formatado}"
 
 
 def _limpar_descricao(texto, data=None):
@@ -303,8 +357,8 @@ def _limpar_descricao(texto, data=None):
         descricao = descricao.replace(data, '').strip()
     descricao = re.sub(r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s*', '', descricao)
     descricao = re.sub(r'^\d{1,2}:\d{2}\s*', '', descricao)
-    descricao = re.sub(r'\b(?:R\$|RS|S/|\$)\b', '', descricao)
-    descricao = re.sub(r'([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', '', descricao)
+    descricao = re.sub(r'(?i)(?:R\$|RS|S/|\$)+', '', descricao)
+    descricao = re.sub(r'([+-]?\d[\d.,]*\d)', '', descricao)
     descricao = re.sub(r'\s+', ' ', descricao).strip(' -|/.,')
     descricao = descricao.strip()
     return descricao or 'Transação sem descrição'
@@ -375,7 +429,8 @@ def _criar_registro_de_celulas(celulas, origem):
     if not descricao:
         descricao = 'Transação sem descrição'
 
-    descricao = re.sub(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', '', descricao)
+    descricao = re.sub(r'(?i)(?:R\$|RS|S/|\$)+', '', descricao)
+    descricao = re.sub(r'([+-]?\d[\d.,]*\d)', '', descricao)
     descricao = re.sub(r'\s+', ' ', descricao).strip(' -|')
     if not descricao:
         descricao = 'Transação sem descrição'
@@ -613,19 +668,10 @@ if arquivos_carregados:
                             
                         dt = match_data.group(0).replace('-', '/')
                         
-                        # Extrai todos os valores monetários da linha (ex: R$ 47,74 ou -R$ 10,00)
-                        match_val = re.findall(r'R?\$?\s*([+-]?\d{1,3}(?:\.\d{3})*,\d{2})', txt)
-                        
-                        val = 0.0
-                        if match_val:
-                            # O último valor geralmente é o saldo final da linha, e o penúltimo ou primeiro é o valor da transação
-                            # No Mercado Pago, o valor da transação vem antes do saldo. Pegamos o penúltimo se houver mais de um, ou o único.
-                            val_alvo = match_val[0] if len(match_val) == 1 else match_val[-2]
-                            val_str = val_alvo.replace('.', '').replace(',', '.')
-                            val = abs(float(val_str))
-                            
-                        # Remove a data do texto da descrição para ficar limpo
-                        desc_limpa = txt.replace(match_data.group(0), '').strip()
+                        val = _extrair_valor_monetario(txt) or 0.0
+
+                        # Remove data, valores e símbolos de moeda da descrição
+                        desc_limpa = _limpar_descricao(txt, dt)
                         
                         if val > 0:
                             datas.append(dt)
@@ -660,10 +706,12 @@ if arquivos_carregados:
                         df_final = pd.DataFrame()
                         df_final['Data'] = df_temp[col_data_encontrada]
                         df_final['Descricao'] = df_temp[col_desc_encontrada]
-                        
-                        s_val = df_temp[col_valor_encontrada].astype(str)
-                        s_val = s_val.str.replace('R$', '', regex=False).str.replace(' ', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-                        df_final['Valor'] = pd.to_numeric(s_val, errors='coerce').fillna(0).abs()
+
+                        df_final['Valor'] = (
+                            df_temp[col_valor_encontrada]
+                            .apply(_converter_texto_para_valor)
+                            .fillna(0.0)
+                        )
                         df_final['Origem'] = arquivo.name
                         dfs_processados.append(df_final)
 
@@ -722,7 +770,9 @@ if arquivos_carregados:
 
         with col_tabela:
             st.subheader("📋 Extrato Unificado")
-            st.dataframe(df[['Data', 'Descricao', 'Tipo', 'Categoria', 'Valor', 'Origem']], use_container_width=True)
+            df_exibicao = df[['Data', 'Descricao', 'Tipo', 'Categoria', 'Valor', 'Origem']].copy()
+            df_exibicao['Valor'] = df_exibicao['Valor'].apply(_formatar_moeda_brl)
+            st.dataframe(df_exibicao, use_container_width=True)
     else:
         st.error("⚠️ Nenhum dos arquivos enviados possui colunas válidas reconhecíveis de Data, Descrição e Valor.")
 
