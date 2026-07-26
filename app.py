@@ -90,6 +90,11 @@ REGRAS_CATEGORIA = {
     'brainly': 'Assinaturas digitais',
     'open ai': 'Assinaturas digitais',
     'hbo max': 'Assinaturas digitais',
+    'netflix': 'Assinaturas digitais',
+    'twitch': 'Assinaturas digitais',
+    'microsoft 365': 'Assinaturas digitais',
+    'ebanx': 'Assinaturas digitais',
+    'onedrive': 'Assinaturas digitais',
 
     
     # Supermercado
@@ -100,28 +105,43 @@ REGRAS_CATEGORIA = {
     'mundial': 'Supermercado',
     'vianense': 'Supermercado',
     'multimarket': 'Supermercado',
+    'mercadinho': 'Supermercado',
+    'mercado': 'Supermercado',
+    'rede economia': 'Supermercado',
 
     
     # Animais
     'petshop': 'Animais de estimação',
-    'clinica': 'Animais de estimação', 
+    'clinica': 'Animais de estimação',
+    'veterinario': 'Animais de estimação',
+    'veterinário': 'Animais de estimação',
+    'banho e tosa': 'Animais de estimação',
+    'american pet': 'Animais de estimação',
+    'pet love': 'Animais de estimação',
 
     
     # Cartão
     'fatura': 'Cartão de crédito',
+    'cartao': 'Cartão de crédito',
+    'cartão': 'Cartão de crédito',
+    
 
     
     # Casa
     'iptu': 'Casa',
     'agua': 'Casa',
+    'água': 'Casa',
     'luz': 'Casa',
     'aluguel': 'Casa',
     'tv a cabo': 'Casa',
     'internet': 'Casa',
     'telefone': 'Casa',
     'gas': 'Casa',
+    'gás': 'Casa',
     'taxa de incendio': 'Casa',
+    'taxa de incêndio': 'Casa',
     'condominio': 'Casa',
+    'condomínio': 'Casa',
 
     
     # Comida e bebida
@@ -132,6 +152,16 @@ REGRAS_CATEGORIA = {
     'padaria': 'Comida e bebida',
     'mercearia': 'Supermercado',
     'minimercado': 'Supermercado',
+    'restaurante': 'Comida e bebida',
+    'lanchonete': 'Comida e bebida',
+    'bar': 'Comida e bebida',
+    'cafeteria': 'Comida e bebida',
+    'pizzaria': 'Comida e bebida',
+    'churrascaria': 'Comida e bebida',
+    'sorveteria': 'Comida e bebida',
+    'starbucks': 'Comida e bebida',
+    'california coffee': 'Comida e bebida',
+    'subway': 'Comida e bebida',
 
     
     # Compras diversas
@@ -146,6 +176,11 @@ REGRAS_CATEGORIA = {
     'renner': 'Compras diversas',
     'c&a': 'Compras diversas',
     'google play': 'Compras diversas',
+    'app store': 'Compras diversas',
+    'pichau': 'Compras diversas',
+    'terabyte': 'Compras diversas',
+    'kabum': 'Compras diversas',
+    'americanas': 'Compras diversas',
 
     
     # Educação
@@ -156,12 +191,11 @@ REGRAS_CATEGORIA = {
     'creche': 'Educação',
     'curso': 'Educação',
     'colegio': 'Educação',
-
-    
-    # Eletrônicos e informática
-    'kabum': 'Eletrônicos',
-    'pichau': 'Eletrônicos',
-    'terabyte': 'Eletrônicos',
+    'colégio': 'Educação',
+    'universidade': 'Educação',
+    'instituto': 'Educação',
+    'educacional': 'Educação',
+    'ensino': 'Educação',
 
     
     # Saúde e cuidados pessoais
@@ -169,6 +203,7 @@ REGRAS_CATEGORIA = {
     'drogasil': 'Saúde e cuidados pessoais',
     'pacheco': 'Saúde e cuidados pessoais',
     'venancio': 'Saúde e cuidados pessoais',
+    'venâncio': 'Saúde e cuidados pessoais',
     'barbearia': 'Saúde e cuidados pessoais',
     'beleza': 'Saúde e cuidados pessoais',
     'academia': 'Saúde e cuidados pessoais',
@@ -176,8 +211,11 @@ REGRAS_CATEGORIA = {
     'natura': 'Saúde e cuidados pessoais',
     'sephora': 'Saúde e cuidados pessoais',
     'boticario': 'Saúde e cuidados pessoais',
+    'boticário': 'Saúde e cuidados pessoais',
     'consultas medicas': 'Saúde e cuidados pessoais',
+    'consultas médicas': 'Saúde e cuidados pessoais',
     'plano de saude': 'Saúde e cuidados pessoais',
+    'plano de saúde': 'Saúde e cuidados pessoais',
 
     # Segurança
     'seguro auto': 'Segurança',
@@ -196,11 +234,23 @@ REGRAS_CATEGORIA = {
     'mais.mobi': 'Transporte',
     'jae': 'Transporte',
     'riocard': 'Transporte',
+    'greencar': 'Transporte',
 
     
     # Transferências
     'pix': 'Transferências',
+    'transferencia': 'Transferências',
+    'transferência': 'Transferências',
+
+    # Receitas
+    'salario': 'Salário',
+    'salário': 'Salário',
+    'remuneracao': 'Salário',
+    'remuneração': 'Salário',
+    'pagamento de salario': 'Salário',
+    'pagamento de salário': 'Salário',
 }
+
 
 def classificar_descricao(texto_bruto):
     texto_min = str(texto_bruto).lower()
@@ -208,6 +258,10 @@ def classificar_descricao(texto_bruto):
         if palavra_chave in texto_min:
             return categoria
     return 'Outros'
+
+
+def classificar_tipo(categoria):
+    return 'Receita' if categoria == 'Salário' else 'Despesa'
 
 
 def _normalizar_texto(texto):
@@ -621,17 +675,27 @@ if arquivos_carregados:
         df = df[df['Valor'] > 0] # Remove valores zerados
         
         df['Categoria'] = df['Descricao'].apply(classificar_descricao)
-        total_gasto = df['Valor'].sum()
-        maior_gasto = df['Valor'].max() if not df.empty else 0
+        df['Tipo'] = df['Categoria'].apply(classificar_tipo)
+
+        despesas = df[df['Tipo'] == 'Despesa']
+        receitas = df[df['Tipo'] == 'Receita']
+
+        total_despesa = despesas['Valor'].sum() if not despesas.empty else 0
+        total_receita = receitas['Valor'].sum() if not receitas.empty else 0
+        saldo = total_receita - total_despesa
+        maior_despesa = despesas['Valor'].max() if not despesas.empty else 0
+        maior_receita = receitas['Valor'].max() if not receitas.empty else 0
 
         # 4. LAYOUT: Métricas Consolidadas
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric(label="Total Gasto (Todas as Contas)", value=f"R$ {total_gasto:,.2f}")
+            st.metric(label="Total Receitas", value=f"R$ {total_receita:,.2f}")
         with col2:
-            st.metric(label="Maior Compra Registrada", value=f"R$ {maior_gasto:,.2f}")
+            st.metric(label="Total Despesas", value=f"R$ {total_despesa:,.2f}")
         with col3:
-            st.metric(label="Total de Transações", value=f"{len(df)} compras")
+            st.metric(label="Saldo", value=f"R$ {saldo:,.2f}")
+        with col4:
+            st.metric(label="Total de Transações", value=f"{len(df)} registros")
 
         st.markdown("---")
 
@@ -639,16 +703,21 @@ if arquivos_carregados:
         col_grafico, col_tabela = st.columns([3, 2])
 
         with col_grafico:
-            st.subheader("📈 Gastos Consolidados por Categoria")
-            if not df.empty:
-                gastos_por_categoria = df.groupby('Categoria')['Valor'].sum()
+            st.subheader("📈 Despesas por Categoria")
+            if not despesas.empty:
+                gastos_por_categoria = despesas.groupby('Categoria')['Valor'].sum()
                 st.bar_chart(gastos_por_categoria)
             else:
-                st.info("Nenhuma transação válida encontrada após os filtros.")
+                st.info("Nenhuma despesa válida encontrada após os filtros.")
+
+            if not receitas.empty:
+                st.subheader("💰 Receitas por Categoria")
+                receitas_por_categoria = receitas.groupby('Categoria')['Valor'].sum()
+                st.bar_chart(receitas_por_categoria)
 
         with col_tabela:
             st.subheader("📋 Extrato Unificado")
-            st.dataframe(df[['Data', 'Descricao', 'Categoria', 'Valor', 'Origem']], use_container_width=True)
+            st.dataframe(df[['Data', 'Descricao', 'Tipo', 'Categoria', 'Valor', 'Origem']], use_container_width=True)
     else:
         st.error("⚠️ Nenhum dos arquivos enviados possui colunas válidas reconhecíveis de Data, Descrição e Valor.")
 
