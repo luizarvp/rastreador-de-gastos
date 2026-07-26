@@ -8,7 +8,6 @@ Aplicação web em Python + Streamlit para transformar extratos bancários bruto
 
 ## 🎥 Demonstração visual
 
-> Dica: se quiser, depois você pode substituir essas imagens por um GIF gravado do app em uso.
 
 ### Exemplo de saída (gráfico)
 ![Gráfico de gastos](grafico_gastos.png)
