@@ -4,12 +4,22 @@ import matplotlib.pyplot as plt
 import io
 import tempfile
 import os
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 try:
     import pdfplumber
     PDFPLUMBER_AVAILABLE = True
 except Exception:
     pdfplumber = None
     PDFPLUMBER_AVAILABLE = False
+
+try:
+    from pypdf import PdfReader
+    PYPDF_AVAILABLE = True
+except Exception:
+    PdfReader = None
+    PYPDF_AVAILABLE = False
 
 try:
     from pdf2image import convert_from_bytes
@@ -199,14 +209,177 @@ def classificar_descricao(texto_bruto):
             return categoria
     return 'Outros'
 
-def extrair_tabela_de_pdf(arquivo_pdf):
-    """Tenta extrair tabelas estruturadas com pdfplumber e, se falhar ou os dados forem insuficientes,
-    faz fallback para OCR (pdf2image + pytesseract) e heurísticas de extração de linhas.
-    Recebe um file-like (UploadedFile) ou bytes-like.
-    """
-    linhas_tabela = []
 
-    # Ler bytes do arquivo (UploadedFile fornece .read())
+def _normalizar_texto(texto):
+    if texto is None:
+        return ''
+    texto = str(texto).replace('\xa0', ' ').strip()
+    texto = re.sub(r'\s+', ' ', texto)
+    return texto
+
+
+def _extrair_data(texto):
+    match_data = re.search(r'(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}|\d{1,2}[-/\.]\d{1,2})', str(texto))
+    if not match_data:
+        return None
+    return match_data.group(0).replace('-', '/').replace('.', '/')
+
+
+def _extrair_valor_monetario(texto):
+    match_val = re.findall(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', str(texto))
+    if not match_val:
+        return None
+
+    val_alvo = match_val[0] if len(match_val) == 1 else match_val[-2]
+    val_str = val_alvo.replace('.', '').replace(',', '.')
+    try:
+        return abs(float(val_str))
+    except Exception:
+        return None
+
+
+def _limpar_descricao(texto, data=None):
+    descricao = str(texto or '').strip()
+    if data:
+        descricao = descricao.replace(data, '').strip()
+    descricao = re.sub(r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s*', '', descricao)
+    descricao = re.sub(r'^\d{1,2}:\d{2}\s*', '', descricao)
+    descricao = re.sub(r'\b(?:R\$|RS|S/|\$)\b', '', descricao)
+    descricao = re.sub(r'([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', '', descricao)
+    descricao = re.sub(r'\s+', ' ', descricao).strip(' -|/.,')
+    descricao = descricao.strip()
+    return descricao or 'Transação sem descrição'
+
+
+def _criar_registro_de_texto(texto, origem, estrategia='generico'):
+    texto_limpo = _normalizar_texto(texto)
+    if not texto_limpo:
+        return None
+
+    if any(pal in texto_limpo.lower() for pal in ['entradas:', 'saídas:', 'saldo', 'total', 'extrato de', 'resumo', 'fatura', 'data', 'descrição', 'valor', 'histórico']):
+        return None
+
+    padrao_data = r'^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:\d{1,2}:\d{2})?\s*(.*)$'
+
+    if estrategia in {'mercado_pago', 'nubank', 'itau', 'santander', 'bradesco', 'caixa'}:
+        match_data = re.match(padrao_data, texto_limpo)
+        if match_data:
+            data = _extrair_data(match_data.group(1))
+            restante = match_data.group(2)
+            valor = _extrair_valor_monetario(restante)
+            if data and valor is not None:
+                descricao = _limpar_descricao(restante, data)
+                return {'Data': data, 'Descricao': descricao, 'Valor': valor, 'Origem': origem}
+
+    data = _extrair_data(texto_limpo)
+    valor = _extrair_valor_monetario(texto_limpo)
+    if not data or valor is None:
+        return None
+
+    descricao = _limpar_descricao(texto_limpo, data)
+
+    return {
+        'Data': data,
+        'Descricao': descricao,
+        'Valor': valor,
+        'Origem': origem,
+    }
+
+
+def _criar_registro_de_celulas(celulas, origem):
+    valores = [str(celula or '').strip() for celula in celulas if str(celula or '').strip()]
+    if len(valores) < 2:
+        return None
+
+    data_idx = None
+    valor_idx = None
+    for idx, valor in enumerate(valores):
+        if data_idx is None and _extrair_data(valor):
+            data_idx = idx
+        if valor_idx is None and _extrair_valor_monetario(valor) is not None:
+            valor_idx = idx
+
+    if data_idx is None or valor_idx is None:
+        return None
+
+    data = _extrair_data(valores[data_idx])
+    valor = _extrair_valor_monetario(valores[valor_idx])
+    if not data or valor is None:
+        return None
+
+    descricao_candidatos = [
+        _normalizar_texto(valores[idx])
+        for idx in range(len(valores))
+        if idx not in {data_idx, valor_idx}
+    ]
+    descricao = ' | '.join([d for d in descricao_candidatos if d])
+    if not descricao:
+        descricao = 'Transação sem descrição'
+
+    descricao = re.sub(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', '', descricao)
+    descricao = re.sub(r'\s+', ' ', descricao).strip(' -|')
+    if not descricao:
+        descricao = 'Transação sem descrição'
+
+    return {
+        'Data': data,
+        'Descricao': descricao,
+        'Valor': valor,
+        'Origem': origem,
+    }
+
+
+def _detectar_estrategia(texto, nome_arquivo=''):
+    texto_min = str(texto or '').lower()
+    nome_min = str(nome_arquivo or '').lower()
+    texto_completo = f'{texto_min}\n{nome_min}'
+
+    if 'mercado pago' in texto_completo or 'mercadopago' in texto_completo:
+        return 'mercado_pago'
+    if 'nubank' in texto_completo:
+        return 'nubank'
+    if 'itau' in texto_completo or 'itaú' in texto_completo:
+        return 'itau'
+    if 'santander' in texto_completo:
+        return 'santander'
+    if 'bradesco' in texto_completo:
+        return 'bradesco'
+    if 'caixa' in texto_completo:
+        return 'caixa'
+    if 'inter' in texto_completo:
+        return 'inter'
+    if 'banrisul' in texto_completo:
+        return 'banrisul'
+    return 'generico'
+
+
+def _adicionar_registros_de_linhas(registros, linhas, origem, nome_arquivo=''):
+    for linha in linhas:
+        if not linha:
+            continue
+        if isinstance(linha, (list, tuple)):
+            registro = _criar_registro_de_celulas(linha, origem)
+            if registro is None:
+                texto = ' | '.join(str(celula or '').strip() for celula in linha if str(celula or '').strip())
+                estrategia = _detectar_estrategia(texto, nome_arquivo)
+                registro = _criar_registro_de_texto(texto, origem, estrategia=estrategia)
+        else:
+            texto = str(linha).strip()
+            estrategia = _detectar_estrategia(texto, nome_arquivo)
+            registro = _criar_registro_de_texto(texto, origem, estrategia=estrategia)
+
+        if registro is not None:
+            registros.append(registro)
+
+
+def extrair_tabela_de_pdf(arquivo_pdf):
+    """Tenta extrair transações de PDFs por texto, tabelas e OCR.
+    O fluxo usa várias estratégias para lidar com diferentes layouts de extrato
+    e converte tudo para um DataFrame padronizado com Data/Descricao/Valor.
+    """
+    registros = []
+    nome_arquivo = getattr(arquivo_pdf, 'name', 'pdf')
+
     try:
         arquivo_pdf.seek(0)
     except Exception:
@@ -217,8 +390,19 @@ def extrair_tabela_de_pdf(arquivo_pdf):
     except Exception:
         data = None
 
-    # 1) Tentar com pdfplumber (tabelas estruturadas e texto), se disponível
-    if PDFPLUMBER_AVAILABLE:
+    origem = getattr(arquivo_pdf, 'name', 'pdf')
+
+    if PYPDF_AVAILABLE and data is not None:
+        try:
+            reader = PdfReader(io.BytesIO(data))
+            for pagina in reader.pages:
+                texto = pagina.extract_text() or ''
+                if texto:
+                    _adicionar_registros_de_linhas(registros, texto.split('\n'), origem, nome_arquivo=nome_arquivo)
+        except Exception:
+            registros = []
+
+    if not registros and PDFPLUMBER_AVAILABLE:
         try:
             pdf_stream = io.BytesIO(data) if data is not None else arquivo_pdf
             with pdfplumber.open(pdf_stream) as pdf:
@@ -227,27 +411,20 @@ def extrair_tabela_de_pdf(arquivo_pdf):
                     if tabelas:
                         for tabela in tabelas:
                             for linha in tabela:
-                                linha_limpa = [celula if celula is not None else '' for celula in linha]
-                                if any(linha_limpa):
-                                    linhas_tabela.append(linha_limpa)
-                    else:
-                        # extrai texto por linha como fallback
-                        texto = pagina.extract_text()
-                        if texto:
-                            for linha in texto.split('\n'):
-                                if linha.strip():
-                                    linhas_tabela.append([linha.strip()])
+                                if linha is not None and any(str(celula or '').strip() for celula in linha):
+                                    _adicionar_registros_de_linhas(registros, [linha], origem, nome_arquivo=nome_arquivo)
+
+                    texto = pagina.extract_text()
+                    if texto:
+                        _adicionar_registros_de_linhas(registros, texto.split('\n'), origem, nome_arquivo=nome_arquivo)
         except Exception:
-            # pdfplumber pode falhar em PDFs escaneados; continuamos para tentar OCR
-            linhas_tabela = []
+            registros = []
 
-    # Se extraímos algo confiável, retornamos
-    if linhas_tabela:
-        return pd.DataFrame(linhas_tabela)
+    if registros:
+        df_final = pd.DataFrame(registros)
+        return df_final[['Data', 'Descricao', 'Valor', 'Origem']]
 
-    # 2) Fallback OCR: renderizar páginas como imagens e extrair texto
     if not OCR_AVAILABLE:
-        # OCR não disponível (pdf2image/pytesseract não instalados)
         return pd.DataFrame()
 
     try:
@@ -256,71 +433,49 @@ def extrair_tabela_de_pdf(arquivo_pdf):
         else:
             imagens = convert_from_bytes(data, dpi=300)
     except Exception:
-        # conversão falhou (poppler ausente ou arquivo inválido)
         return pd.DataFrame()
 
-    ocr_lines = []
     for img in imagens:
         try:
             texto = pytesseract.image_to_string(img, lang='por+eng')
         except Exception:
             texto = pytesseract.image_to_string(img)
-        for linha in texto.split('\n'):
-            if linha.strip():
-                ocr_lines.append(linha.strip())
+        _adicionar_registros_de_linhas(registros, texto.split('\n'), origem, nome_arquivo=nome_arquivo)
 
-    # Heurística para transformar linhas OCR em colunas Data/Descricao/Valor quando possível
-    import re
-    datas, descricoes, valores = [], [], []
-    for txt in ocr_lines:
-        # Ignora linhas de sumário
-        if any(pal in txt.lower() for pal in ['entradas:', 'saídas:', 'saldo', 'total', 'extrato de']):
-            continue
-
-        match_data = re.search(r'(\d{2}[-/\.]\d{2}[-/\.]\d{4}|\d{2}[-/\.]\d{2})', txt)
-        if not match_data:
-            # tenta encontrar valores; se encontrar, usa a linha como descrição única
-            match_val = re.findall(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', txt)
-            if match_val:
-                val_alvo = match_val[-1]
-                val_str = val_alvo.replace('.', '').replace(',', '.')
-                try:
-                    val = abs(float(val_str))
-                except Exception:
-                    val = 0.0
-                datas.append('')
-                descricoes.append(txt)
-                valores.append(val)
-            continue
-
-        dt = match_data.group(0).replace('-', '/').replace('.', '/')
-        match_val = re.findall(r'R?\$?\s*([+-]?\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2})', txt)
-        val = 0.0
-        if match_val:
-            # prefere o penúltimo quando há múltiplos (saldo + valor)
-            val_alvo = match_val[0] if len(match_val) == 1 else match_val[-2]
-            val_str = val_alvo.replace('.', '').replace(',', '.')
-            try:
-                val = abs(float(val_str))
-            except Exception:
-                val = 0.0
-
-        desc_limpa = txt.replace(match_data.group(0), '').strip()
-        if val > 0:
-            datas.append(dt)
-            descricoes.append(desc_limpa)
-            valores.append(val)
-
-    if datas:
-        df_final = pd.DataFrame({
-            'Data': datas,
-            'Descricao': descricoes,
-            'Valor': valores,
-            'Origem': getattr(arquivo_pdf, 'name', 'pdf')
-        })
-        return df_final
+    if registros:
+        df_final = pd.DataFrame(registros)
+        return df_final[['Data', 'Descricao', 'Valor', 'Origem']]
 
     return pd.DataFrame()
+def extrair_texto_de_docx(arquivo):
+    try:
+        arquivo.seek(0)
+    except Exception:
+        pass
+
+    dados = arquivo.read() if hasattr(arquivo, 'read') else arquivo
+    if not dados:
+        return ''
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(dados)) as pacote:
+            if 'word/document.xml' not in pacote.namelist():
+                return ''
+            xml_bytes = pacote.read('word/document.xml')
+            root = ET.fromstring(xml_bytes)
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            textos = []
+            for paragrafo in root.findall('.//w:p', ns):
+                partes = []
+                for node in paragrafo.findall('.//w:t', ns):
+                    if node.text:
+                        partes.append(node.text)
+                if partes:
+                    textos.append(''.join(partes))
+            return '\n'.join(textos)
+    except Exception:
+        return ''
+
 
 def carregar_e_encontrar_tabela(arquivo):
     nome = arquivo.name.lower()
@@ -336,14 +491,37 @@ def carregar_e_encontrar_tabela(arquivo):
         df_pdf = extrair_tabela_de_pdf(arquivo)
         if not df_pdf.empty:
             return df_pdf
+    elif nome.endswith('.docx'):
+        texto = extrair_texto_de_docx(arquivo)
+        if texto:
+            registros = []
+            for linha in texto.split('\n'):
+                registro = _criar_registro_de_texto(linha, arquivo.name, estrategia=_detectar_estrategia(linha, arquivo.name))
+                if registro is not None:
+                    registros.append(registro)
+            if registros:
+                return pd.DataFrame(registros)
+    elif nome.endswith('.txt'):
+        try:
+            arquivo.seek(0)
+        except Exception:
+            pass
+        texto = arquivo.read().decode('utf-8', errors='ignore') if hasattr(arquivo, 'read') else str(arquivo)
+        registros = []
+        for linha in texto.split('\n'):
+            registro = _criar_registro_de_texto(linha, arquivo.name, estrategia=_detectar_estrategia(linha, arquivo.name))
+            if registro is not None:
+                registros.append(registro)
+        if registros:
+            return pd.DataFrame(registros)
 
     return pd.DataFrame()
 
 # 2. BARRA LATERAL (Sidebar)
 st.sidebar.header("📁 Importar Dados")
 arquivos_carregados = st.sidebar.file_uploader(
-    "Carregue seus extratos (.csv, .xlsx, .pdf ou word)", 
-    type=["csv", "xlsx", "xls", "pdf", "word"],
+"Carregue seus extratos (.csv, .xlsx, .pdf, .docx, .txt)", 
+type=["csv", "xlsx", "xls", "pdf", "docx", "txt"],
     accept_multiple_files=True
 )
 
