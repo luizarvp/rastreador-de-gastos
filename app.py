@@ -95,6 +95,7 @@ REGRAS_CATEGORIA = {
     'microsoft 365': 'Assinaturas digitais',
     'ebanx': 'Assinaturas digitais',
     'onedrive': 'Assinaturas digitais',
+    'pagamento': 'Assinaturas digitais',
 
     
     # Supermercado
@@ -162,6 +163,9 @@ REGRAS_CATEGORIA = {
     'starbucks': 'Comida e bebida',
     'california coffee': 'Comida e bebida',
     'subway': 'Comida e bebida',
+    'doces': 'Comida e bebida',
+    'comercio': 'Comida e bebida',
+    'comércio': 'Comida e bebida',
 
     
     # Compras diversas
@@ -241,6 +245,7 @@ REGRAS_CATEGORIA = {
     'pix': 'Transferências',
     'transferencia': 'Transferências',
     'transferência': 'Transferências',
+    'recebido': 'Transferências',
 
     # Receitas
     'salario': 'Salário',
