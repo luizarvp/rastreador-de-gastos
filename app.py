@@ -109,6 +109,7 @@ REGRAS_CATEGORIA = {
     'mercadinho': 'Supermercado',
     'mercado': 'Supermercado',
     'rede economia': 'Supermercado',
+    'horti': 'Supermercado',
 
     
     # Animais
@@ -239,6 +240,7 @@ REGRAS_CATEGORIA = {
     'jae': 'Transporte',
     'riocard': 'Transporte',
     'greencar': 'Transporte',
+    'ipva': 'Transporte',
 
     
     # Transferências
@@ -246,6 +248,8 @@ REGRAS_CATEGORIA = {
     'transferencia': 'Transferências',
     'transferência': 'Transferências',
     'recebido': 'Transferências',
+    'banking': 'Transferências',
+    'ted': 'Transferências',
 
     # Receitas
     'salario': 'Salário',
