@@ -186,6 +186,7 @@ REGRAS_CATEGORIA = {
     'terabyte': 'Compras diversas',
     'kabum': 'Compras diversas',
     'americanas': 'Compras diversas',
+    'bazar': 'Compras diversas',
 
     
     # Educação
@@ -231,6 +232,7 @@ REGRAS_CATEGORIA = {
     'prudential': 'Segurança',
     'metlife': 'Segurança',
     'mongeral': 'Segurança',
+    'seguro': 'Segurança',
 
     
     # Transporte
@@ -244,12 +246,13 @@ REGRAS_CATEGORIA = {
 
     
     # Transferências
-    'pix': 'Transferências',
     'transferencia': 'Transferências',
     'transferência': 'Transferências',
     'recebido': 'Transferências',
     'banking': 'Transferências',
     'ted': 'Transferências',
+    'boleto': 'Transferências',
+    
 
     # Receitas
     'salario': 'Salário',
@@ -271,6 +274,27 @@ def classificar_descricao(texto_bruto):
 
 def classificar_tipo(categoria):
     return 'Receita' if categoria == 'Salário' else 'Despesa'
+
+def classificar_tipo_por_valor(valor):
+    return 'Receita' if valor > 0 else 'Despesa'
+
+
+def preparar_dataframe_consolidado(df):
+    df = df.copy()
+    df = df[~df['Descricao'].str.lower().str.contains('saldo|rendimento|limite|transf. entre contas|total', na=False)]
+    df = df[df['Valor'] != 0].copy()
+    df['ValorAbs'] = df['Valor'].abs()
+    df['Categoria'] = df['Descricao'].apply(classificar_descricao)
+    df['Tipo'] = df['Valor'].apply(classificar_tipo_por_valor)
+    return df
+
+
+def calcular_totais(df):
+    total_receita = df.loc[df['Valor'] > 0, 'Valor'].sum()
+    total_despesa = df.loc[df['Valor'] < 0, 'Valor'].abs().sum()
+    saldo = df['Valor'].sum()
+    return total_receita, total_despesa, saldo
+
 
 
 def _normalizar_texto(texto):
