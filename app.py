@@ -345,7 +345,7 @@ def _converter_texto_para_valor(texto):
         return None
 
     try:
-        return abs(float(valor_str))
+        return float(valor_str)
     except ValueError:
         return None
 
@@ -361,7 +361,7 @@ def _extrair_valor_monetario(texto):
         if not re.search(r'(?i)(?:R\$|RS|\$)|[.,]\d{1,2}\b', trecho):
             continue
         valor = _converter_texto_para_valor(trecho)
-        if valor is not None and valor > 0:
+        if valor is not None:
             valores_encontrados.append(valor)
 
     if not valores_encontrados:
@@ -701,7 +701,7 @@ if arquivos_carregados:
                         # Remove data, valores e símbolos de moeda da descrição
                         desc_limpa = _limpar_descricao(txt, dt)
                         
-                        if val > 0:
+                        if val != 0:
                             datas.append(dt)
                             descricoes.append(desc_limpa)
                             valores.append(val)
@@ -753,15 +753,15 @@ if arquivos_carregados:
         
         # Filtra ruídos comuns de extrato bancário
         df = df[~df['Descricao'].str.lower().str.contains('saldo|rendimento|limite|transf. entre contas|total', na=False)]
-        df = df[df['Valor'] > 0] # Remove valores zerados
+        df = df[df['Valor'] != 0] # Remove valores zerados
         
         df['Categoria'] = df['Descricao'].apply(classificar_descricao)
-        df['Tipo'] = df['Categoria'].apply(classificar_tipo)
+        df['Tipo'] = df['Valor'].apply(classificar_tipo_por_valor)
 
-        despesas = df[df['Tipo'] == 'Despesa']
-        receitas = df[df['Tipo'] == 'Receita']
+        despesas = df[df['Valor'] < 0]
+        receitas = df[df['Valor'] > 0]
 
-        total_despesa = despesas['Valor'].sum() if not despesas.empty else 0
+        total_despesa = despesas['Valor'].abs().sum() if not despesas.empty else 0
         total_receita = receitas['Valor'].sum() if not receitas.empty else 0
         saldo = total_receita - total_despesa
         maior_despesa = despesas['Valor'].max() if not despesas.empty else 0
@@ -786,7 +786,7 @@ if arquivos_carregados:
         with col_grafico:
             st.subheader("📈 Despesas por Categoria")
             if not despesas.empty:
-                gastos_por_categoria = despesas.groupby('Categoria')['Valor'].sum()
+                gastos_por_categoria = despesas.assign(Valor=despesas['Valor'].abs()).groupby('Categoria')['Valor'].sum()
                 st.bar_chart(gastos_por_categoria)
             else:
                 st.info("Nenhuma despesa válida encontrada após os filtros.")
