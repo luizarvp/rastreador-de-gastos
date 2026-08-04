@@ -367,7 +367,7 @@ def _extrair_valor_monetario(texto):
     if not valores_encontrados:
         return None
 
-    return valores_encontrados[0] if len(valores_encontrados) == 1 else valores_encontrados[-2]
+    return valores_encontrados[-1]
 
 
 def _formatar_moeda_brl(valor):
